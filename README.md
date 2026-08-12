@@ -1,36 +1,26 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SI Magang · Universitas Tarakanita
 
-## Getting Started
+Dashboard modern untuk tracking kegiatan magang harian, review mingguan, TTD elektronik supervisor/dosen, dan cetak dokumen ke PDF.
 
-First, run the development server:
+## Jalankan lokal
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+Copy-Item .env.example .env.local
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Tanpa `DATABASE_URL`, aplikasi tetap bisa dicoba dengan data demo dan menyimpan perubahan di browser. Agar data persisten, jalankan [`db/schema.sql`](./db/schema.sql) di SQL Editor Neon lalu isi `DATABASE_URL` di `.env.local`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Neon
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Gunakan connection string pooled dari Neon untuk deployment serverless/Vercel. Simpan hanya di environment variable `DATABASE_URL`; jangan commit file `.env.local`.
 
-## Learn More
+## Deploy ke Vercel
 
-To learn more about Next.js, take a look at the following resources:
+1. Push folder ini ke GitHub atau import project lokal ke Vercel.
+2. Tambahkan environment variable `DATABASE_URL` untuk Preview dan Production.
+3. Deploy/redeploy project.
+4. Buka URL deployment Vercel untuk akses publik.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Next.js terdeteksi otomatis oleh Vercel. Tombol `Cetak / PDF` memakai dialog print browser sehingga pengguna dapat memilih `Save as PDF`.

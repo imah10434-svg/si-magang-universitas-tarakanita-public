@@ -114,10 +114,18 @@ const weeklyData = [
   { week: "Minggu 4", range: "22–31 Agu", progress: 22, tone: "lavender" },
 ];
 
-const formatDate = (date: string) =>
-  new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(
-    new Date(`${date}T00:00:00`),
-  );
+const parseDate = (value: string) => {
+  const normalized = value.includes("T") ? value : `${value}T00:00:00`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatDate = (date: string) => {
+  const parsed = parseDate(date);
+  return parsed
+    ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(parsed)
+    : date;
+};
 
 function Badge({ status }: { status: LogStatus }) {
   return <span className={`status-badge status-${status.toLowerCase()}`}>{status}</span>;
@@ -295,7 +303,12 @@ export default function Home() {
       // Local storage is only a demo fallback; the Neon API remains the source of truth in production.
     }
     fetch("/api/logs").then((response) => response.ok ? response.json() : []).then((data: Log[]) => {
-      if (Array.isArray(data) && data.length) setLogs(data);
+      if (Array.isArray(data) && data.length) {
+        setLogs(data.map((item) => ({
+          ...item,
+          date: item.date.includes("T") ? item.date.slice(0, 10) : item.date,
+        })));
+      }
     }).catch(() => undefined);
     fetch("/api/signatures").then((response) => response.ok ? response.json() : []).then((data: Signature[]) => {
       if (Array.isArray(data) && data.length) setSignatures((current) => current.map((item) => data.find((remote) => remote.role === item.role) ?? item));

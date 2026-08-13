@@ -58,7 +58,7 @@ INSERT INTO interns (
 )
 VALUES (
   'demo-intern',
-  'Nadya Kirana Putri',
+  'Indar Kusmadi',
   '2022010123',
   'Sistem Informasi',
   'PT Solusi Digital Nusantara',

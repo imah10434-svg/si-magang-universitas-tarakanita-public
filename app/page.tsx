@@ -466,7 +466,7 @@ function RegistrationModal({
           <option>Mahasiswa</option><option>Dosen Pembimbing</option><option>Supervisor Kantor</option><option>Koordinator/Admin</option>
         </select>
         <label className="field-label" htmlFor="register-email">Gmail</label>
-        <input id="register-email" className="text-input" type="email" pattern="[^@\\s]+@gmail\\.com" placeholder="nama@gmail.com" value={form.email} onChange={(event) => update("email", event.target.value)} required />
+        <input id="register-email" className="text-input" type="email" inputMode="email" autoComplete="email" placeholder="nama@gmail.com" value={form.email} onChange={(event) => update("email", event.target.value)} onBlur={(event) => update("email", event.target.value.trim())} required />
         <label className="field-label" htmlFor="register-name">Nama lengkap</label>
         <input id="register-name" className="text-input" placeholder="Nama lengkap" value={form.name} onChange={(event) => update("name", event.target.value)} required />
         <div className="form-grid">

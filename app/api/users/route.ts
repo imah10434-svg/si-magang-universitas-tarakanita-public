@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 import { getSql } from "@/lib/db";
 
 const roles = ["Mahasiswa", "Dosen Pembimbing", "Supervisor Kantor", "Koordinator/Admin"] as const;
 
 export async function GET() {
   const sql = getSql();
-  if (!sql) return NextResponse.json([]);
+  const currentUser = await getCurrentUser();
+  if (!sql) return NextResponse.json({ error: "Database belum terhubung." }, { status: 503 });
+  if (!currentUser) return NextResponse.json({ error: "Silakan masuk terlebih dahulu." }, { status: 401 });
+  if (currentUser.role !== "Koordinator/Admin") return NextResponse.json({ error: "Akses direktori hanya untuk admin." }, { status: 403 });
 
   try {
     const rows = await sql`
@@ -23,7 +27,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const sql = getSql();
-  if (!sql) return NextResponse.json({ stored: false, reason: "DATABASE_URL belum dikonfigurasi" });
+  const currentUser = await getCurrentUser();
+  if (!sql) return NextResponse.json({ error: "Database belum terhubung." }, { status: 503 });
+  if (!currentUser) return NextResponse.json({ error: "Silakan masuk terlebih dahulu." }, { status: 401 });
+  if (currentUser.role !== "Koordinator/Admin") return NextResponse.json({ error: "Akses direktori hanya untuk admin." }, { status: 403 });
 
   try {
     const body = await request.json();

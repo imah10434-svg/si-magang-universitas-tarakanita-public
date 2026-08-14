@@ -25,6 +25,41 @@ ALTER TABLE interns ADD COLUMN IF NOT EXISTS study_program TEXT;
 ALTER TABLE interns ADD COLUMN IF NOT EXISTS semester INTEGER;
 ALTER TABLE interns ADD COLUMN IF NOT EXISTS cohort TEXT;
 
+CREATE TABLE IF NOT EXISTS app_users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('Mahasiswa', 'Dosen Pembimbing', 'Supervisor Kantor', 'Koordinator/Admin')),
+  major TEXT NOT NULL DEFAULT '',
+  study_program TEXT NOT NULL DEFAULT '',
+  nim TEXT NOT NULL DEFAULT '',
+  semester INTEGER,
+  cohort TEXT NOT NULL DEFAULT '',
+  organization TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS app_users_role_idx
+  ON app_users (role, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS app_sessions_expiry_idx
+  ON app_sessions (expires_at);
+
+ALTER TABLE interns ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES app_users(id) ON DELETE CASCADE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS interns_user_unique_idx
+  ON interns (user_id)
+  WHERE user_id IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS interns_email_unique_idx
   ON interns (LOWER(email))
   WHERE email IS NOT NULL AND email <> '';

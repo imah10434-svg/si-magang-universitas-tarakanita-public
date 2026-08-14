@@ -74,6 +74,25 @@ type DirectoryUser = {
   createdAt?: string;
 };
 
+type AuthUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  major: string;
+  studyProgram: string;
+  nim: string;
+  semester: number | null;
+  cohort: string;
+  organization: string;
+  internId: string | null;
+  company: string;
+  supervisorName: string;
+  lecturerName: string;
+  startDate: string | null;
+  endDate: string | null;
+};
+
 const initialProfile: Profile = {
   email: "",
   name: "Nadya Kirana Putri",
@@ -84,14 +103,26 @@ const initialProfile: Profile = {
   cohort: "2022",
 };
 
-const normalizeProfile = (data: Partial<Profile> | null | undefined): Profile => ({
-  email: String(data?.email ?? initialProfile.email),
-  name: String(data?.name ?? initialProfile.name),
-  major: String(data?.major ?? initialProfile.major),
-  studyProgram: String(data?.studyProgram ?? initialProfile.studyProgram),
-  nim: String(data?.nim ?? initialProfile.nim),
-  semester: Number(data?.semester ?? initialProfile.semester),
-  cohort: String(data?.cohort ?? initialProfile.cohort),
+const emptyProfile: Profile = {
+  email: "",
+  name: "",
+  major: "",
+  studyProgram: "",
+  nim: "",
+  semester: 1,
+  cohort: "",
+};
+
+type ProfileData = { email?: string | null; name?: string | null; major?: string | null; studyProgram?: string | null; nim?: string | null; semester?: number | null; cohort?: string | null };
+
+const normalizeProfile = (data: ProfileData | null | undefined, fallback = initialProfile): Profile => ({
+  email: String(data?.email ?? fallback.email),
+  name: String(data?.name ?? fallback.name),
+  major: String(data?.major ?? fallback.major),
+  studyProgram: String(data?.studyProgram ?? fallback.studyProgram),
+  nim: String(data?.nim ?? fallback.nim),
+  semester: Number(data?.semester ?? fallback.semester ?? 1),
+  cohort: String(data?.cohort ?? fallback.cohort),
 });
 
 const navItems: { key: NavKey; label: string; icon: typeof LayoutDashboard }[] = [
@@ -211,6 +242,89 @@ const downloadUsersSpreadsheet = (users: DirectoryUser[]) => {
 
 function Badge({ status }: { status: LogStatus }) {
   return <span className={`status-badge status-${status.toLowerCase()}`}>{status}</span>;
+}
+
+function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => void }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [role, setRole] = useState<UserRole>("Mahasiswa");
+  const [form, setForm] = useState({ email: "", password: "", confirmPassword: "", name: "", major: "", studyProgram: "", nim: "", semester: "", cohort: "", organization: "" });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const isStudent = role === "Mahasiswa";
+  const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (mode === "register" && form.password !== form.confirmPassword) {
+      setError("Konfirmasi password belum sama.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/auth/${mode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mode === "login" ? { email: form.email, password: form.password } : {
+          email: form.email,
+          password: form.password,
+          name: form.name,
+          role,
+          major: form.major,
+          studyProgram: form.studyProgram,
+          nim: form.nim,
+          semester: form.semester,
+          cohort: form.cohort,
+          organization: form.organization,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(String(data.error ?? "Permintaan tidak dapat diproses."));
+        return;
+      }
+      onAuthenticated(data.user as AuthUser);
+    } catch {
+      setError("Tidak dapat terhubung ke server. Coba lagi.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-card">
+        <div className="auth-brand"><div className="brand-mark"><Sparkles size={20} strokeWidth={2.5} /></div><div><p className="brand-name">SI MAGANG</p><p className="brand-campus">UNIVERSITAS TARAKANITA</p></div></div>
+        <div className="auth-intro"><p className="eyebrow">Workspace magang pribadi</p><h1>{mode === "login" ? "Masuk ke akunmu" : "Buat akun pengguna"}</h1><p>{mode === "login" ? "Kelola tracking harian, review mingguan, dan TTD secara aman." : "Daftar sekali dengan Gmail dan password, lalu langsung masuk ke dashboard akunmu."}</p></div>
+        <div className="auth-tabs"><button type="button" className={mode === "login" ? "auth-tab active" : "auth-tab"} onClick={() => { setMode("login"); setError(""); }}>Masuk</button><button type="button" className={mode === "register" ? "auth-tab active" : "auth-tab"} onClick={() => { setMode("register"); setError(""); }}>Daftar</button></div>
+        <form className="auth-form" onSubmit={submit}>
+          {mode === "register" && <>
+            <label className="field-label" htmlFor="auth-role">Peran pengguna</label>
+            <select id="auth-role" className="text-input" value={role} onChange={(event) => setRole(event.target.value as UserRole)}><option>Mahasiswa</option><option>Dosen Pembimbing</option><option>Supervisor Kantor</option><option>Koordinator/Admin</option></select>
+            <label className="field-label" htmlFor="auth-name">Nama lengkap</label>
+            <input id="auth-name" className="text-input" placeholder="Nama lengkap" value={form.name} onChange={(event) => update("name", event.target.value)} autoComplete="name" required />
+          </>}
+          <label className="field-label" htmlFor="auth-email">Gmail</label>
+          <input id="auth-email" className="text-input" type="email" inputMode="email" placeholder="nama@gmail.com" value={form.email} onChange={(event) => update("email", event.target.value)} autoComplete="email" required />
+          <label className="field-label" htmlFor="auth-password">Password</label>
+          <input id="auth-password" className="text-input" type="password" placeholder="Minimal 8 karakter" value={form.password} onChange={(event) => update("password", event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required />
+          {mode === "register" && <>
+            <label className="field-label" htmlFor="auth-confirm-password">Ulangi password</label>
+            <input id="auth-confirm-password" className="text-input" type="password" placeholder="Ulangi password" value={form.confirmPassword} onChange={(event) => update("confirmPassword", event.target.value)} autoComplete="new-password" minLength={8} required />
+            {isStudent && <div className="auth-student-fields">
+              <div className="form-grid"><div><label className="field-label" htmlFor="auth-major">Jurusan</label><input id="auth-major" className="text-input" placeholder="Jurusan" value={form.major} onChange={(event) => update("major", event.target.value)} required /></div><div><label className="field-label" htmlFor="auth-study-program">Program studi</label><input id="auth-study-program" className="text-input" placeholder="Program studi" value={form.studyProgram} onChange={(event) => update("studyProgram", event.target.value)} required /></div></div>
+              <div className="form-grid"><div><label className="field-label" htmlFor="auth-nim">NIM</label><input id="auth-nim" className="text-input" placeholder="NIM mahasiswa" value={form.nim} onChange={(event) => update("nim", event.target.value)} required /></div><div><label className="field-label" htmlFor="auth-semester">Semester</label><input id="auth-semester" className="text-input" type="number" min="1" max="20" placeholder="1–20" value={form.semester} onChange={(event) => update("semester", event.target.value)} required /></div></div>
+              <label className="field-label" htmlFor="auth-cohort">Angkatan</label><input id="auth-cohort" className="text-input" inputMode="numeric" placeholder="Contoh: 2022" value={form.cohort} onChange={(event) => update("cohort", event.target.value)} required />
+            </div>}
+            {!isStudent && <><label className="field-label" htmlFor="auth-organization">Instansi/unit</label><input id="auth-organization" className="text-input" placeholder="Fakultas atau perusahaan" value={form.organization} onChange={(event) => update("organization", event.target.value)} /></>}
+          </>}
+          {error && <p className="auth-error" role="alert">{error}</p>}
+          <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? "Memproses..." : mode === "login" ? "Masuk ke akun" : "Daftar dan masuk"}</button>
+        </form>
+        <p className="auth-security"><ShieldCheck size={15} /> Password tersimpan sebagai hash dan data magang dipisahkan per akun.</p>
+      </section>
+    </main>
+  );
 }
 
 function SignatureModal({
@@ -368,14 +482,19 @@ function AddLogModal({ onClose, onSave }: { onClose: () => void; onSave: (log: O
 
 function ProfileModal({
   profile,
+  role,
   onClose,
   onSave,
+  onLogout,
 }: {
   profile: Profile;
+  role: UserRole;
   onClose: () => void;
   onSave: (profile: Profile) => void;
+  onLogout: () => void;
 }) {
   const [form, setForm] = useState(profile);
+  const isStudent = role === "Mahasiswa";
   const update = (key: keyof Profile, value: string) => setForm((current) => ({
     ...current,
     [key]: key === "semester" ? Number(value) : value,
@@ -395,20 +514,21 @@ function ProfileModal({
         </div>
         <p className="helper-copy profile-intro">Lengkapi data diri untuk ditampilkan di dokumen magang dan diunduh sebagai spreadsheet.</p>
         <label className="field-label" htmlFor="profile-email">Email</label>
-        <input id="profile-email" className="text-input" type="email" placeholder="nama@kampus.ac.id" value={form.email} onChange={(event) => update("email", event.target.value)} required />
+        <input id="profile-email" className="text-input" type="email" placeholder="nama@gmail.com" value={form.email} onChange={(event) => update("email", event.target.value)} required />
         <label className="field-label" htmlFor="profile-name">Nama lengkap</label>
         <input id="profile-name" className="text-input" placeholder="Nama lengkap mahasiswa" value={form.name} onChange={(event) => update("name", event.target.value)} required />
         <div className="form-grid">
-          <div><label className="field-label" htmlFor="profile-major">Jurusan</label><input id="profile-major" className="text-input" placeholder="Contoh: Teknik Informatika" value={form.major} onChange={(event) => update("major", event.target.value)} required /></div>
-          <div><label className="field-label" htmlFor="profile-study-program">Program studi</label><input id="profile-study-program" className="text-input" placeholder="Contoh: Sistem Informasi" value={form.studyProgram} onChange={(event) => update("studyProgram", event.target.value)} required /></div>
+          <div><label className="field-label" htmlFor="profile-major">Jurusan</label><input id="profile-major" className="text-input" placeholder="Contoh: Teknik Informatika" value={form.major} onChange={(event) => update("major", event.target.value)} required={isStudent} /></div>
+          <div><label className="field-label" htmlFor="profile-study-program">Program studi</label><input id="profile-study-program" className="text-input" placeholder="Contoh: Sistem Informasi" value={form.studyProgram} onChange={(event) => update("studyProgram", event.target.value)} required={isStudent} /></div>
         </div>
         <div className="form-grid">
-          <div><label className="field-label" htmlFor="profile-nim">NIM</label><input id="profile-nim" className="text-input" placeholder="Nomor induk mahasiswa" value={form.nim} onChange={(event) => update("nim", event.target.value)} required /></div>
-          <div><label className="field-label" htmlFor="profile-semester">Semester</label><input id="profile-semester" className="text-input" type="number" min="1" max="20" value={form.semester} onChange={(event) => update("semester", event.target.value)} required /></div>
+          <div><label className="field-label" htmlFor="profile-nim">NIM</label><input id="profile-nim" className="text-input" placeholder="Nomor induk mahasiswa" value={form.nim} onChange={(event) => update("nim", event.target.value)} required={isStudent} /></div>
+          <div><label className="field-label" htmlFor="profile-semester">Semester</label><input id="profile-semester" className="text-input" type="number" min="1" max="20" value={form.semester} onChange={(event) => update("semester", event.target.value)} required={isStudent} /></div>
         </div>
         <label className="field-label" htmlFor="profile-cohort">Angkatan</label>
-        <input id="profile-cohort" className="text-input" inputMode="numeric" placeholder="Contoh: 2022" value={form.cohort} onChange={(event) => update("cohort", event.target.value)} required />
+        <input id="profile-cohort" className="text-input" inputMode="numeric" placeholder="Contoh: 2022" value={form.cohort} onChange={(event) => update("cohort", event.target.value)} required={isStudent} />
         <div className="modal-actions profile-actions"><button type="button" className="ghost-button" onClick={() => downloadProfileSpreadsheet(form)}><Download size={16} /> Unduh spreadsheet</button><button type="submit" className="primary-button"><Check size={16} /> Simpan profil</button></div>
+        <button type="button" className="logout-button" onClick={onLogout}>Keluar dari akun</button>
       </form>
     </div>
   );
@@ -490,10 +610,12 @@ function RegistrationModal({
 }
 
 export default function Home() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeNav, setActiveNav] = useState<NavKey>("overview");
-  const [logs, setLogs] = useState<Log[]>(initialLogs);
+  const [logs, setLogs] = useState<Log[]>([]);
   const [signatures, setSignatures] = useState<Signature[]>(initialSignatures);
-  const [profile, setProfile] = useState<Profile>(initialProfile);
+  const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
   const [mobileNav, setMobileNav] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
@@ -502,18 +624,43 @@ export default function Home() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me").then(async (response) => {
+      if (!active) return;
+      if (response.ok) {
+        const data = await response.json();
+        setAuthUser(data.user as AuthUser);
+      }
+    }).catch(() => undefined).finally(() => {
+      if (active) setAuthLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
+    const storagePrefix = `si-magang-${authUser.id}`;
+    const accountProfile = normalizeProfile(authUser, emptyProfile);
+    const accountSignatures: Signature[] = [
+      { role: "supervisor", name: authUser.supervisorName || "Supervisor belum ditentukan", title: `Supervisor Magang · ${authUser.company || "Instansi belum diisi"}` },
+      { role: "dosen", name: authUser.lecturerName || "Dosen pembimbing belum ditentukan", title: "Dosen Pembimbing · Universitas Tarakanita" },
+    ];
+    setProfile(accountProfile);
+    setLogs([]);
+    setSignatures(accountSignatures);
+    setDirectoryUsers([]);
     try {
-      const storedLogs = window.localStorage.getItem("si-magang-logs");
-      const storedSignatures = window.localStorage.getItem("si-magang-signatures");
-      const storedProfile = window.localStorage.getItem("si-magang-profile");
+      const storedLogs = window.localStorage.getItem(`${storagePrefix}-logs`);
+      const storedSignatures = window.localStorage.getItem(`${storagePrefix}-signatures`);
+      const storedProfile = window.localStorage.getItem(`${storagePrefix}-profile`);
       if (storedLogs) setLogs(JSON.parse(storedLogs));
       if (storedSignatures) setSignatures(JSON.parse(storedSignatures));
-      if (storedProfile) setProfile(normalizeProfile(JSON.parse(storedProfile)));
+      if (storedProfile) setProfile(normalizeProfile(JSON.parse(storedProfile), emptyProfile));
     } catch {
-      // Local storage is only a demo fallback; the Neon API remains the source of truth in production.
+      // Neon remains the source of truth; local storage only keeps an in-progress form responsive.
     }
     fetch("/api/logs").then((response) => response.ok ? response.json() : []).then((data: Log[]) => {
-      if (Array.isArray(data) && data.length) {
+      if (Array.isArray(data)) {
         setLogs(data.map((item) => ({
           ...item,
           date: item.date.includes("T") ? item.date.slice(0, 10) : item.date,
@@ -521,27 +668,29 @@ export default function Home() {
       }
     }).catch(() => undefined);
     fetch("/api/signatures").then((response) => response.ok ? response.json() : []).then((data: Signature[]) => {
-      if (Array.isArray(data) && data.length) setSignatures((current) => current.map((item) => data.find((remote) => remote.role === item.role) ?? item));
+      if (Array.isArray(data)) setSignatures((current) => current.map((item) => data.find((remote) => remote.role === item.role) ?? item));
     }).catch(() => undefined);
     fetch("/api/profile").then((response) => response.ok ? response.json() : null).then((data: Profile | null) => {
-      if (data) setProfile(normalizeProfile(data));
+      if (data) setProfile(normalizeProfile(data, emptyProfile));
     }).catch(() => undefined);
-    fetch("/api/users").then((response) => response.ok ? response.json() : []).then((data: DirectoryUser[]) => {
-      if (Array.isArray(data)) setDirectoryUsers(data);
-    }).catch(() => undefined);
-  }, []);
+    if (authUser.role === "Koordinator/Admin") {
+      fetch("/api/users").then((response) => response.ok ? response.json() : []).then((data: DirectoryUser[]) => {
+        if (Array.isArray(data)) setDirectoryUsers(data);
+      }).catch(() => undefined);
+    }
+  }, [authUser]);
 
   useEffect(() => {
-    window.localStorage.setItem("si-magang-logs", JSON.stringify(logs));
-  }, [logs]);
+    if (authUser) window.localStorage.setItem(`si-magang-${authUser.id}-logs`, JSON.stringify(logs));
+  }, [logs, authUser]);
 
   useEffect(() => {
-    window.localStorage.setItem("si-magang-signatures", JSON.stringify(signatures));
-  }, [signatures]);
+    if (authUser) window.localStorage.setItem(`si-magang-${authUser.id}-signatures`, JSON.stringify(signatures));
+  }, [signatures, authUser]);
 
   useEffect(() => {
-    window.localStorage.setItem("si-magang-profile", JSON.stringify(profile));
-  }, [profile]);
+    if (authUser) window.localStorage.setItem(`si-magang-${authUser.id}-profile`, JSON.stringify(profile));
+  }, [profile, authUser]);
 
   useEffect(() => {
     if (!toast) return;
@@ -571,24 +720,25 @@ export default function Home() {
     setToast("Tanda tangan elektronik tersimpan");
   };
 
-  const saveProfile = (nextProfile: Profile) => {
-    setProfile(nextProfile);
+  const saveProfile = async (nextProfile: Profile) => {
+    const response = await fetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nextProfile) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setToast(String(data.error ?? "Profil gagal disimpan"));
+      return;
+    }
+    setProfile(normalizeProfile(data, emptyProfile));
     setShowProfileModal(false);
     setToast("Profil pengguna berhasil disimpan");
-    fetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nextProfile) }).catch(() => undefined);
   };
 
-  const registerUser = (user: Omit<DirectoryUser, "id">) => {
-    const nextUser = { ...user, id: `user-${Date.now()}` };
-    setDirectoryUsers((current) => [nextUser, ...current.filter((item) => item.email !== nextUser.email)]);
-    if (user.role === "Mahasiswa") {
-      const nextProfile = normalizeProfile(user);
-      setProfile(nextProfile);
-      fetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nextProfile) }).catch(() => undefined);
-    }
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setShowProfileModal(false);
-    setToast(`${user.name} berhasil didaftarkan`);
-    fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(user) }).catch(() => undefined);
+    setAuthUser(null);
+    setProfile(emptyProfile);
+    setLogs([]);
+    setSignatures(initialSignatures);
   };
 
   const printPdf = () => {
@@ -600,6 +750,9 @@ export default function Home() {
     setMobileNav(false);
   };
 
+  if (authLoading) return <main className="auth-shell"><div className="auth-loading">Memuat akun pengguna...</div></main>;
+  if (!authUser) return <AuthScreen onAuthenticated={(user) => { setAuthUser(user); setToast(`Selamat datang, ${user.name}`); }} />;
+
   return (
     <main className="app-shell">
       <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
@@ -607,7 +760,7 @@ export default function Home() {
           <div className="brand-mark"><Sparkles size={20} strokeWidth={2.5} /></div>
           <div><p className="brand-name">SI MAGANG</p><p className="brand-campus">UNIVERSITAS TARAKANITA</p></div>
         </div>
-        <div className="profile-mini profile-trigger" role="button" tabIndex={0} onClick={() => setShowProfileModal(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setShowProfileModal(true); }}><div className="avatar">{profileInitials}</div><div><p className="profile-name">{profile.name}</p><p className="profile-role">Buka profil & daftar</p></div><ChevronDown size={15} className="muted-icon" /></div>
+        <div className="profile-mini profile-trigger" role="button" tabIndex={0} onClick={() => setShowProfileModal(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setShowProfileModal(true); }}><div className="avatar">{profileInitials}</div><div><p className="profile-name">{profile.name}</p><p className="profile-role">{authUser.role}</p></div><ChevronDown size={15} className="muted-icon" /></div>
         <div className="nav-label">Workspace</div>
         <nav className="nav-list">
           {navItems.map((item) => { const Icon = item.icon; return <button key={item.key} className={`nav-item ${activeNav === item.key ? "nav-item-active" : ""}`} onClick={() => openSection(item.key)}><Icon size={18} /><span>{item.label}</span>{item.key === "daily" && <span className="nav-count">{logs.length}</span>}</button>; })}
@@ -616,10 +769,10 @@ export default function Home() {
       </aside>
 
       <section className="main-area">
-        <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav((open) => !open)} aria-label="Buka menu"><Menu size={20} /></button><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>{navItems.find((item) => item.key === activeNav)?.label}</strong></div><div className="topbar-actions"><button className="icon-button notification-button" aria-label="Notifikasi"><Bell size={18} /><span className="notification-dot" /></button><div className="topbar-divider" /><div className="topbar-user"><div className="avatar avatar-small">NK</div><span>Nadya</span><ChevronDown size={14} /></div></div></header>
+        <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav((open) => !open)} aria-label="Buka menu"><Menu size={20} /></button><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>{navItems.find((item) => item.key === activeNav)?.label}</strong></div><div className="topbar-actions"><button className="icon-button notification-button" aria-label="Notifikasi"><Bell size={18} /><span className="notification-dot" /></button><div className="topbar-divider" /><div className="topbar-user"><div className="avatar avatar-small">{profileInitials}</div><span>{profile.name.split(/\s+/)[0] || "Pengguna"}</span><ChevronDown size={14} /></div></div></header>
 
         <div className="content-wrap">
-          <section className="hero-row"><div><p className="eyebrow">Selamat pagi, Nadya <span className="wave">✦</span></p><h1>{activeNav === "overview" ? "Progress magangmu terlihat baik." : navItems.find((item) => item.key === activeNav)?.label}</h1><p className="hero-subtitle">Pantau aktivitas, review, dan persetujuan magang dalam satu ruang kerja.</p></div><div className="hero-actions"><button className="secondary-button" onClick={printPdf}><Download size={17} /> Cetak / PDF</button><button className="primary-button" onClick={() => setShowLogModal(true)}><Plus size={17} /> Tambah aktivitas</button></div></section>
+          <section className="hero-row"><div><p className="eyebrow">Selamat pagi, {profile.name || "Pengguna"} <span className="wave">✦</span></p><h1>{activeNav === "overview" ? "Progress magangmu terlihat baik." : navItems.find((item) => item.key === activeNav)?.label}</h1><p className="hero-subtitle">Pantau aktivitas, review, dan persetujuan magang dalam satu ruang kerja.</p></div><div className="hero-actions"><button className="secondary-button" onClick={printPdf}><Download size={17} /> Cetak / PDF</button><button className="primary-button" onClick={() => setShowLogModal(true)}><Plus size={17} /> Tambah aktivitas</button></div></section>
 
           {activeNav === "overview" && <>
             <section className="metric-grid"><div className="metric-card metric-card-sage"><div className="metric-icon"><Clock3 size={18} /></div><div><p className="metric-label">Total jam</p><p className="metric-value">{totalHours}<span> jam</span></p><p className="metric-trend"><ArrowUpRight size={14} /> 12% dari minggu lalu</p></div><div className="metric-spark spark-sage"><span /><span /><span /><span /><span /><span /><span /></div></div><div className="metric-card metric-card-yellow"><div className="metric-icon"><CheckCircle2 size={18} /></div><div><p className="metric-label">Aktivitas selesai</p><p className="metric-value">{completedLogs}<span> / {logs.length}</span></p><p className="metric-trend"><ArrowUpRight size={14} /> Konsisten minggu ini</p></div><div className="metric-spark spark-yellow"><span /><span /><span /><span /><span /><span /><span /></div></div><div className="metric-card metric-card-blue"><div className="metric-icon"><BriefcaseBusiness size={18} /></div><div><p className="metric-label">Sisa masa magang</p><p className="metric-value">80<span> hari</span></p><p className="metric-trend neutral-trend"><CalendarDays size={14} /> s/d 31 Okt 2026</p></div><div className="metric-spark spark-blue"><span /><span /><span /><span /><span /><span /><span /></div></div></section>
@@ -635,7 +788,7 @@ export default function Home() {
         </div>
       </section>
       {showLogModal && <AddLogModal onClose={() => setShowLogModal(false)} onSave={addLog} />}
-      {showProfileModal && <RegistrationModal profile={profile} users={directoryUsers} onClose={() => setShowProfileModal(false)} onRegister={registerUser} />}
+      {showProfileModal && <ProfileModal profile={profile} role={authUser.role} onClose={() => setShowProfileModal(false)} onSave={saveProfile} onLogout={logout} />}
       {activeSignature && signatureRole && <SignatureModal signature={activeSignature} onClose={() => setSignatureRole(null)} onSave={saveSignature} />}
       {toast && <div className="toast"><CheckCircle2 size={17} /> {toast}</div>}
     </main>

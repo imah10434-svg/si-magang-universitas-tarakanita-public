@@ -3,9 +3,14 @@
 
 CREATE TABLE IF NOT EXISTS interns (
   id TEXT PRIMARY KEY,
+  email TEXT,
   name TEXT NOT NULL,
   student_id TEXT NOT NULL,
   program TEXT NOT NULL,
+  major TEXT,
+  study_program TEXT,
+  semester INTEGER,
+  cohort TEXT,
   company TEXT NOT NULL,
   supervisor_name TEXT NOT NULL,
   lecturer_name TEXT NOT NULL,
@@ -13,6 +18,33 @@ CREATE TABLE IF NOT EXISTS interns (
   end_date DATE NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE interns ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE interns ADD COLUMN IF NOT EXISTS major TEXT;
+ALTER TABLE interns ADD COLUMN IF NOT EXISTS study_program TEXT;
+ALTER TABLE interns ADD COLUMN IF NOT EXISTS semester INTEGER;
+ALTER TABLE interns ADD COLUMN IF NOT EXISTS cohort TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS interns_email_unique_idx
+  ON interns (LOWER(email))
+  WHERE email IS NOT NULL AND email <> '';
+
+CREATE TABLE IF NOT EXISTS directory_users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('Mahasiswa', 'Dosen Pembimbing', 'Supervisor Kantor', 'Koordinator/Admin')),
+  major TEXT NOT NULL DEFAULT '',
+  study_program TEXT NOT NULL DEFAULT '',
+  nim TEXT NOT NULL DEFAULT '',
+  semester INTEGER,
+  cohort TEXT NOT NULL DEFAULT '',
+  organization TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS directory_users_role_idx
+  ON directory_users (role, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS daily_logs (
   id TEXT PRIMARY KEY,
@@ -58,7 +90,7 @@ INSERT INTO interns (
 )
 VALUES (
   'demo-intern',
-  'Indar Kusmadi',
+  'Nadya Kirana Putri',
   '2022010123',
   'Sistem Informasi',
   'PT Solusi Digital Nusantara',

@@ -122,7 +122,8 @@ CREATE TABLE IF NOT EXISTS signatures (
 
 CREATE TABLE IF NOT EXISTS signed_documents (
   id TEXT PRIMARY KEY,
-  intern_id TEXT NOT NULL REFERENCES interns(id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES app_users(id) ON DELETE CASCADE,
+  intern_id TEXT REFERENCES interns(id) ON DELETE CASCADE,
   file_name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   original_data TEXT NOT NULL,
@@ -133,8 +134,14 @@ CREATE TABLE IF NOT EXISTS signed_documents (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE signed_documents ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES app_users(id) ON DELETE CASCADE;
+ALTER TABLE signed_documents ALTER COLUMN intern_id DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS signed_documents_intern_created_idx
   ON signed_documents (intern_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS signed_documents_user_created_idx
+  ON signed_documents (user_id, created_at DESC);
 
 INSERT INTO interns (
   id, name, student_id, program, company, supervisor_name, lecturer_name, start_date, end_date

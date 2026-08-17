@@ -1,3 +1,5 @@
+@import "./document-styles.css";
+
 :root {
   --ink: #1f3933;
   --muted: #70827c;

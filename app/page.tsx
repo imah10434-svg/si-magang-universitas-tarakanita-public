@@ -48,6 +48,23 @@ type Signature = {
   signatureData?: string;
 };
 
+type DocumentSigner = {
+  role: SignatureRole;
+  name: string;
+  signedAt: string;
+};
+
+type SignedDocument = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  status: "uploaded" | "signed";
+  signatures: DocumentSigner[];
+  hasSignedData: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 type Profile = {
   email: string;
   name: string;
@@ -331,10 +348,12 @@ function SignatureModal({
   signature,
   onClose,
   onSave,
+  documentName,
 }: {
   signature: Signature;
   onClose: () => void;
-  onSave: (signatureData: string, name: string) => void;
+  onSave: (signatureData: string, name: string) => void | Promise<void>;
+  documentName?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [name, setName] = useState(signature.name);
@@ -417,6 +436,7 @@ function SignatureModal({
         <label className="field-label" htmlFor="signer-name">Nama penandatangan</label>
         <input id="signer-name" className="text-input" value={name} onChange={(event) => setName(event.target.value)} />
         <p className="helper-copy">Bubuhkan tanda tangan menggunakan mouse, trackpad, atau layar sentuh.</p>
+        {documentName && <div className="signature-target"><FileText size={15} /><span>TTD akan ditempel ke <strong>{documentName}</strong></span></div>}
         <div className="signature-pad-wrap">
           <canvas
             ref={canvasRef}
@@ -621,6 +641,9 @@ export default function Home() {
   const [showLogModal, setShowLogModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [signatureRole, setSignatureRole] = useState<SignatureRole | null>(null);
+  const [documents, setDocuments] = useState<SignedDocument[]>([]);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const [documentBusy, setDocumentBusy] = useState(false);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
@@ -648,6 +671,8 @@ export default function Home() {
     setProfile(accountProfile);
     setLogs([]);
     setSignatures(accountSignatures);
+    setDocuments([]);
+    setSelectedDocumentId(null);
     setDirectoryUsers([]);
     try {
       const storedLogs = window.localStorage.getItem(`${storagePrefix}-logs`);
@@ -669,6 +694,12 @@ export default function Home() {
     }).catch(() => undefined);
     fetch("/api/signatures").then((response) => response.ok ? response.json() : []).then((data: Signature[]) => {
       if (Array.isArray(data)) setSignatures((current) => current.map((item) => data.find((remote) => remote.role === item.role) ?? item));
+    }).catch(() => undefined);
+    fetch("/api/documents").then((response) => response.ok ? response.json() : []).then((data: SignedDocument[]) => {
+      if (Array.isArray(data)) {
+        setDocuments(data);
+        setSelectedDocumentId((current) => current && data.some((item) => item.id === current) ? current : data[0]?.id ?? null);
+      }
     }).catch(() => undefined);
     fetch("/api/profile").then((response) => response.ok ? response.json() : null).then((data: Profile | null) => {
       if (data) setProfile(normalizeProfile(data, emptyProfile));
@@ -701,6 +732,7 @@ export default function Home() {
   const totalHours = useMemo(() => logs.reduce((total, log) => total + Number(log.hours), 0), [logs]);
   const completedLogs = useMemo(() => logs.filter((log) => log.status === "Selesai").length, [logs]);
   const activeSignature = signatureRole ? signatures.find((item) => item.role === signatureRole) : undefined;
+  const selectedDocument = selectedDocumentId ? documents.find((item) => item.id === selectedDocumentId) : undefined;
   const profileInitials = profile.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "MA";
 
   const addLog = (log: Omit<Log, "id">) => {
@@ -711,13 +743,60 @@ export default function Home() {
     fetch("/api/logs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(log) }).catch(() => undefined);
   };
 
-  const saveSignature = (data: string, name: string) => {
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    const isDocx = file.name.toLowerCase().endsWith(".docx");
+    if ((!isPdf && !isDocx) || file.size > 3_000_000) {
+      setToast("Gunakan PDF atau Word .docx dengan ukuran maksimal 3 MB");
+      return;
+    }
+    setDocumentBusy(true);
+    try {
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? "").split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("File tidak dapat dibaca"));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: file.name, mimeType: file.type, data }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(result.error ?? "Dokumen gagal diunggah"));
+      const document = result as SignedDocument;
+      setDocuments((current) => [document, ...current]);
+      setSelectedDocumentId(document.id);
+      setToast("Dokumen berhasil diunggah dan siap ditandatangani");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Dokumen gagal diunggah");
+    } finally {
+      setDocumentBusy(false);
+    }
+  };
+
+  const saveSignature = async (data: string, name: string) => {
     if (!signatureRole) return;
     const signedAt = new Date().toISOString();
+    const signatureResponse = await fetch("/api/signatures", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: signatureRole, name, signatureData: data }) });
+    const signatureResult = await signatureResponse.json().catch(() => ({}));
+    if (!signatureResponse.ok) {
+      setToast(String(signatureResult.error ?? "Tanda tangan gagal disimpan"));
+      return;
+    }
     setSignatures((current) => current.map((item) => item.role === signatureRole ? { ...item, name, signatureData: data, signedAt } : item));
-    fetch("/api/signatures", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: signatureRole, name, signatureData: data }) }).catch(() => undefined);
+    if (selectedDocument) {
+      const documentResponse = await fetch(`/api/documents/${selectedDocument.id}/sign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: signatureRole, name, signatureData: data }) });
+      const documentResult = await documentResponse.json().catch(() => ({}));
+      if (!documentResponse.ok) {
+        setSignatureRole(null);
+        setToast(`TTD tersimpan, tetapi file belum berubah: ${String(documentResult.error ?? "coba lagi")}`);
+        return;
+      }
+      setDocuments((current) => current.map((item) => item.id === selectedDocument.id ? documentResult as SignedDocument : item));
+    }
     setSignatureRole(null);
-    setToast("Tanda tangan elektronik tersimpan");
+    setToast(selectedDocument ? `TTD berhasil ditempel ke ${selectedDocument.fileName}` : "Tanda tangan elektronik tersimpan");
   };
 
   const saveProfile = async (nextProfile: Profile) => {
@@ -739,11 +818,15 @@ export default function Home() {
     setProfile(emptyProfile);
     setLogs([]);
     setSignatures(initialSignatures);
+    setDocuments([]);
+    setSelectedDocumentId(null);
   };
 
   const printPdf = () => {
     window.print();
   };
+
+  const documentHasSigner = (role: SignatureRole) => Boolean(selectedDocument?.signatures.some((item) => item.role === role));
 
   const openSection = (key: NavKey) => {
     setActiveNav(key);
@@ -784,12 +867,12 @@ export default function Home() {
 
           {activeNav === "weekly" && <section className="panel page-panel"><div className="page-panel-head"><div><p className="eyebrow">Refleksi dan evaluasi</p><h2>Review mingguan</h2><p className="panel-description">Lihat perkembangan setiap minggu dan siapkan catatan untuk supervisor.</p></div><button className="secondary-button" onClick={printPdf}><Download size={17} /> Cetak review</button></div><div className="weekly-detail-grid">{weeklyData.map((item, index) => <div className="week-detail-card" key={item.week}><div className="week-detail-head"><div><span className={`week-dot dot-${item.tone}`} /> <strong>{item.week}</strong><p>{item.range} · 2026</p></div><span className="detail-percent">{item.progress}%</span></div><div className="detail-bar"><span className={`bar-fill bar-${item.tone}`} style={{ width: `${item.progress}%` }} /></div><p className="detail-copy">{index === 0 ? "Berhasil memahami lingkungan kerja dan alur koordinasi tim." : index === 1 ? "Mulai konsisten mengelola data dan dokumentasi tugas." : "Belum dimulai — review akan tersedia setelah periode berjalan."}</p><button className="outline-small">{index < 2 ? "Buka catatan" : "Tambah refleksi"} <ArrowUpRight size={14} /></button></div>)}</div></section>}
 
-          {activeNav === "signatures" && <section className="panel page-panel"><div className="page-panel-head"><div><p className="eyebrow">Approval digital</p><h2>Ruang tanda tangan</h2><p className="panel-description">Gunakan TTD elektronik untuk melengkapi dokumen magang sebelum dicetak atau disimpan PDF.</p></div><button className="secondary-button" onClick={printPdf}><Download size={17} /> Cetak dokumen</button></div><div className="signature-notice"><div className="notice-icon"><ShieldCheck size={20} /></div><div><strong>Dokumen siap disahkan</strong><p>Setelah dua pihak menandatangani, kamu bisa mencetak halaman ini sebagai PDF.</p></div><span className="notice-status">Aman</span></div><div className="signature-cards">{signatures.map((signature) => <div className="signature-card" key={signature.role}><div className="signature-card-head"><div className={`signature-avatar large ${signature.role}`}><PenLine size={20} /></div><div><p className="eyebrow">{signature.role === "supervisor" ? "Supervisor kantor" : "Dosen pembimbing"}</p><h3>{signature.name}</h3><p>{signature.title}</p></div><span className={`signature-status ${signature.signedAt ? "signed" : "waiting"}`}>{signature.signedAt ? <><Check size={13} /> Tersimpan</> : <><Clock3 size={13} /> Menunggu</>}</span></div><div className="signature-preview">{signature.signatureData ? <img src={signature.signatureData} alt={`Tanda tangan ${signature.name}`} /> : <div className="signature-placeholder"><PenLine size={18} /><span>Belum ada tanda tangan elektronik</span></div>}<span className="signature-line-label">{signature.signedAt ? `Ditandatangani ${formatDate(signature.signedAt.slice(0, 10))}` : "Area tanda tangan"}</span></div><button className="full-button" onClick={() => setSignatureRole(signature.role)}><PenLine size={16} /> {signature.signedAt ? "Perbarui tanda tangan" : "Bubuhkan tanda tangan"}</button></div>)}</div><div className="document-footer"><div><FileText size={20} /><div><strong>Berita acara magang</strong><span>2 tanda tangan diperlukan untuk finalisasi.</span></div></div><button className="primary-button" onClick={printPdf}><Download size={16} /> Cetak / simpan PDF</button></div></section>}
+          {activeNav === "signatures" && <section className="panel page-panel"><div className="page-panel-head"><div><p className="eyebrow">Approval digital</p><h2>Ruang tanda tangan</h2><p className="panel-description">Unggah dokumen PDF atau Word .docx, pilih file, lalu bubuhkan TTD. Tanda tangan akan ditempel langsung ke file dan bisa diunduh kembali.</p></div><button className="secondary-button" onClick={printPdf}><Download size={17} /> Cetak halaman</button></div><div className="signature-notice"><div className="notice-icon"><ShieldCheck size={20} /></div><div><strong>Dokumen aman per akun</strong><p>File hanya bisa dibuka oleh akun yang mengunggahnya. Maksimal 3 MB per dokumen.</p></div><span className="notice-status">Privat</span></div><div className="document-upload-panel"><div><p className="eyebrow">Dokumen yang akan ditandatangani</p><h3>Upload PDF / Word</h3><p>Gunakan PDF atau Word modern (.docx). Isi dokumen tetap dipertahankan.</p></div><input id="document-upload" className="document-file-input" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleDocumentUpload} disabled={documentBusy} /><label className="primary-button document-upload-button" htmlFor="document-upload"><FileText size={16} /> {documentBusy ? "Mengunggah..." : "Pilih dokumen"}</label></div>{documents.length > 0 ? <div className="document-list">{documents.map((document) => { const selected = selectedDocumentId === document.id; return <div className={`document-row ${selected ? "document-row-selected" : ""}`} key={document.id}><div className="document-icon"><FileText size={18} /></div><div className="document-info"><strong>{document.fileName}</strong><span>{document.mimeType.includes("word") || document.fileName.toLowerCase().endsWith(".docx") ? "Word .docx" : "PDF"} · {document.signatures.length}/2 TTD · {document.status === "signed" ? "Sudah ada TTD" : "Belum ditandatangani"}</span></div><div className="document-actions"><button className="outline-small" onClick={() => setSelectedDocumentId(document.id)}>{selected ? "Dokumen dipilih" : "Pilih untuk TTD"}</button><a className="outline-small" href={`/api/documents/${document.id}?version=original`}>Asli</a>{document.hasSignedData && <a className="outline-small document-download-link" href={`/api/documents/${document.id}?version=signed`}>Unduh TTD</a>}</div></div>; })}</div> : <div className="document-empty"><FileText size={19} /><span>Belum ada dokumen. Upload file di atas untuk mulai.</span></div>}<div className="selected-document-note">{selectedDocument ? <><CheckCircle2 size={16} /><span>Dokumen aktif: <strong>{selectedDocument.fileName}</strong>. Pilih kartu supervisor atau dosen untuk menempelkan TTD ke file ini.</span></> : <><FileText size={16} /><span>Upload dan pilih satu dokumen agar TTD berikutnya langsung masuk ke file.</span></>}</div><div className="signature-cards">{signatures.map((signature) => { const alreadySigned = documentHasSigner(signature.role); return <div className="signature-card" key={signature.role}><div className="signature-card-head"><div className={`signature-avatar large ${signature.role}`}><PenLine size={20} /></div><div><p className="eyebrow">{signature.role === "supervisor" ? "Supervisor kantor" : "Dosen pembimbing"}</p><h3>{signature.name}</h3><p>{signature.title}</p></div><span className={`signature-status ${signature.signedAt ? "signed" : "waiting"}`}>{signature.signedAt ? <><Check size={13} /> Tersimpan</> : <><Clock3 size={13} /> Menunggu</>}</span></div><div className="signature-preview">{signature.signatureData ? <img src={signature.signatureData} alt={`Tanda tangan ${signature.name}`} /> : <div className="signature-placeholder"><PenLine size={18} /><span>Belum ada tanda tangan elektronik</span></div>}<span className="signature-line-label">{signature.signedAt ? `Ditandatangani ${formatDate(signature.signedAt.slice(0, 10))}` : "Area tanda tangan"}</span></div><button className="full-button" disabled={alreadySigned} onClick={() => setSignatureRole(signature.role)}><PenLine size={16} /> {alreadySigned ? "Sudah TTD di dokumen" : signature.signedAt ? "Perbarui tanda tangan" : "Bubuhkan tanda tangan"}</button></div>; })}</div><div className="document-footer"><div><FileText size={20} /><div><strong>{selectedDocument ? selectedDocument.fileName : "Belum ada dokumen"}</strong><span>{selectedDocument ? `${selectedDocument.signatures.length}/2 pihak sudah menandatangani file.` : "Upload dokumen untuk memulai proses TTD."}</span></div></div>{selectedDocument?.hasSignedData ? <a className="primary-button document-download-link" href={`/api/documents/${selectedDocument.id}?version=signed`}><Download size={16} /> Unduh file bertanda tangan</a> : <button className="primary-button" onClick={printPdf}><Download size={16} /> Cetak halaman</button>}</div></section>}
         </div>
       </section>
       {showLogModal && <AddLogModal onClose={() => setShowLogModal(false)} onSave={addLog} />}
       {showProfileModal && <ProfileModal profile={profile} role={authUser.role} onClose={() => setShowProfileModal(false)} onSave={saveProfile} onLogout={logout} />}
-      {activeSignature && signatureRole && <SignatureModal signature={activeSignature} onClose={() => setSignatureRole(null)} onSave={saveSignature} />}
+      {activeSignature && signatureRole && <SignatureModal signature={activeSignature} documentName={selectedDocument?.fileName} onClose={() => setSignatureRole(null)} onSave={saveSignature} />}
       {toast && <div className="toast"><CheckCircle2 size={17} /> {toast}</div>}
     </main>
   );

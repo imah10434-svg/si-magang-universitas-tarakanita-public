@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       ),
       inserted_intern AS (
         INSERT INTO interns (id, user_id, email, name, student_id, program, major, study_program, semester, cohort, company, supervisor_name, lecturer_name, start_date, end_date)
-        SELECT ${internId}, id, email, name, nim, study_program, major, study_program, semester, cohort,
+        SELECT ${internId}, id, email, name, nim, "studyProgram", major, "studyProgram", semester, cohort,
           ${company}, 'Supervisor belum ditentukan', 'Dosen pembimbing belum ditentukan', CURRENT_DATE, CURRENT_DATE + 90
         FROM inserted_user
         WHERE role = 'Mahasiswa'

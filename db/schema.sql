@@ -120,6 +120,22 @@ CREATE TABLE IF NOT EXISTS signatures (
   UNIQUE (intern_id, role)
 );
 
+CREATE TABLE IF NOT EXISTS signed_documents (
+  id TEXT PRIMARY KEY,
+  intern_id TEXT NOT NULL REFERENCES interns(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  original_data TEXT NOT NULL,
+  signed_data TEXT,
+  status TEXT NOT NULL DEFAULT 'uploaded' CHECK (status IN ('uploaded', 'signed')),
+  signatures_json TEXT NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS signed_documents_intern_created_idx
+  ON signed_documents (intern_id, created_at DESC);
+
 INSERT INTO interns (
   id, name, student_id, program, company, supervisor_name, lecturer_name, start_date, end_date
 )

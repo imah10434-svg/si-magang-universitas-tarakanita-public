@@ -9,7 +9,8 @@ async function ensureDocumentsTable(sql: NonNullable<ReturnType<typeof getSql>>)
   await sql`
     CREATE TABLE IF NOT EXISTS signed_documents (
       id TEXT PRIMARY KEY,
-      intern_id TEXT NOT NULL REFERENCES interns(id) ON DELETE CASCADE,
+      user_id TEXT REFERENCES app_users(id) ON DELETE CASCADE,
+      intern_id TEXT REFERENCES interns(id) ON DELETE CASCADE,
       file_name TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       original_data TEXT NOT NULL,
@@ -20,6 +21,8 @@ async function ensureDocumentsTable(sql: NonNullable<ReturnType<typeof getSql>>)
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE signed_documents ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES app_users(id) ON DELETE CASCADE`;
+  await sql`ALTER TABLE signed_documents ALTER COLUMN intern_id DROP NOT NULL`;
 }
 
 function parseSignatures(value: unknown): DocumentSigner[] {
@@ -58,7 +61,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!sql) return NextResponse.json({ error: "Database belum terhubung." }, { status: 503 });
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Silakan masuk terlebih dahulu." }, { status: 401 });
-  if (!user.internId) return NextResponse.json({ error: "Data magang belum tersedia." }, { status: 403 });
   const { id } = await params;
   try {
     const body = await request.json();
@@ -71,7 +73,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       SELECT id, file_name AS "fileName", mime_type AS "mimeType", original_data AS "originalData",
         signed_data AS "signedData", signatures_json AS "signaturesJson"
       FROM signed_documents
-      WHERE id = ${id} AND intern_id = ${user.internId}
+      WHERE id = ${id} AND (user_id = ${user.id} OR (user_id IS NULL AND ${user.internId} IS NOT NULL AND intern_id = ${user.internId}))
       LIMIT 1
     `;
     const row = rows[0] as { id: string; fileName: string; mimeType: string; originalData: string; signedData: string | null; signaturesJson: string } | undefined;
@@ -84,7 +86,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const updated = await sql`
       UPDATE signed_documents
       SET signed_data = ${signedData}, status = 'signed', signatures_json = ${JSON.stringify(nextSignatures)}, updated_at = NOW()
-      WHERE id = ${id} AND intern_id = ${user.internId}
+      WHERE id = ${id} AND (user_id = ${user.id} OR (user_id IS NULL AND ${user.internId} IS NOT NULL AND intern_id = ${user.internId}))
       RETURNING id, file_name AS "fileName", mime_type AS "mimeType", status,
         signatures_json AS "signaturesJson", (signed_data IS NOT NULL) AS "hasSignedData",
         created_at AS "createdAt", updated_at AS "updatedAt"
